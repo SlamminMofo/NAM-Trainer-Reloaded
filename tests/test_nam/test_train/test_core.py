@@ -78,9 +78,7 @@ def _call_get_configs_for_current_core():
     }
     signature = inspect.signature(core._get_configs)
     kwargs = {
-        name: deepcopy(values[name])
-        for name in signature.parameters
-        if name in values
+        name: deepcopy(values[name]) for name in signature.parameters if name in values
     }
     missing = [
         name

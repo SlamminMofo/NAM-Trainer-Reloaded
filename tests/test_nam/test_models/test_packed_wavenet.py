@@ -3,6 +3,7 @@ import json as _json
 import pytest as _pytest
 import torch as _torch
 
+from nam import data as _data
 from nam.models.wavenet import PackedWaveNet as _PackedWaveNet
 from nam.models.wavenet import WaveNet as _WaveNet
 from nam.models.wavenet._packed_conv import PackedConv1dBase as _PackedConv1dBase
@@ -217,10 +218,30 @@ def test_packed_export_writes_slimmable_container(tmp_path):
     _assert_container_contains_two_wavenets(container)
 
 
-def test_packed_export_loads_lightning_checkpoint(tmp_path):
-    from nam.train.lightning_module import PackedLightningModule as _PackedLightningModule
+def test_packed_export_applies_model_dict_post_hooks(tmp_path):
+    model = _PackedWaveNet.init_from_config({**_packed_config(), "sample_rate": 48_000})
+    model.export_model_dict_post_hooks.append(_data.Dataset._ScaleOutputHook(scale=2.0))
 
-    packed = _PackedWaveNet.init_from_config({**_packed_config(), "sample_rate": 48_000})
+    container = model.export_container(tmp_path)
+    with open(tmp_path / "model.nam", "r") as fp:
+        from_disk = _json.load(fp)
+    submodels = [item["model"] for item in container["config"]["submodels"]]
+
+    assert from_disk == container
+    assert [model["config"]["head_scale"] for model in submodels] == [
+        _pytest.approx(0.5),
+        _pytest.approx(0.5),
+    ]
+
+
+def test_packed_export_loads_lightning_checkpoint(tmp_path):
+    from nam.train.lightning_module import (
+        PackedLightningModule as _PackedLightningModule,
+    )
+
+    packed = _PackedWaveNet.init_from_config(
+        {**_packed_config(), "sample_rate": 48_000}
+    )
     checkpoint_path = tmp_path / "lightning.ckpt"
     _torch.save(
         {
@@ -242,7 +263,9 @@ def test_packed_export_loads_lightning_checkpoint(tmp_path):
 
 
 def test_packed_export_loads_raw_packed_state_dict_checkpoint(tmp_path):
-    packed = _PackedWaveNet.init_from_config({**_packed_config(), "sample_rate": 48_000})
+    packed = _PackedWaveNet.init_from_config(
+        {**_packed_config(), "sample_rate": 48_000}
+    )
     checkpoint_path = tmp_path / "raw.ckpt"
     _torch.save(
         {"state_dict": packed.state_dict(), "sample_rate": 48_000},
@@ -261,7 +284,9 @@ def test_packed_export_loads_raw_packed_state_dict_checkpoint(tmp_path):
 
 
 def test_packed_export_rejects_corrupt_checkpoint(tmp_path):
-    packed = _PackedWaveNet.init_from_config({**_packed_config(), "sample_rate": 48_000})
+    packed = _PackedWaveNet.init_from_config(
+        {**_packed_config(), "sample_rate": 48_000}
+    )
     state_dict = dict(packed.state_dict())
     key, value = state_dict.popitem()
     state_dict[f"corrupt.{key}"] = value

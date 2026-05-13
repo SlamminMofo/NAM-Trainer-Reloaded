@@ -166,6 +166,7 @@ class PackedWaveNet(_BaseNet, _ImportsWeights):
             container["metadata"].update(_cast_enums(user_metadata.model_dump()))
         if other_metadata is not None:
             container["metadata"].update(_cast_enums(other_metadata))
+        container = self._apply_export_model_dict_post_hooks(model_dict=container)
 
         outdir = _Path(outdir)
         with open(_Path(outdir, f"{basename}{self.FILE_EXTENSION}"), "w") as fp:
@@ -290,9 +291,7 @@ def _normalize_packed_checkpoint_state_dict(
 
     lightning_prefix = "_net."
     if source and all(k.startswith(lightning_prefix) for k in source):
-        normalized = {
-            k[len(lightning_prefix) :]: v for k, v in state_dict.items()
-        }
+        normalized = {k[len(lightning_prefix) :]: v for k, v in state_dict.items()}
         normalized_keys = set(normalized.keys())
         if normalized_keys == expected:
             return normalized

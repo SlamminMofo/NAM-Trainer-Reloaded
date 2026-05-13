@@ -36,6 +36,8 @@ from torch.utils.data import DataLoader as _DataLoader
 from ..data import AbstractDataset as _AbstractDataset
 from ..data import DataError as _DataError
 from ..data import Split as _Split
+from ..data import apply_joint_dataset_hooks as _apply_joint_dataset_hooks
+from ..data import get_joint_dataset_hooks as _get_joint_dataset_hooks
 from ..data import init_dataset as _init_dataset
 from ..data import wav_to_np as _wav_to_np
 from ..data import wav_to_tensor as _wav_to_tensor
@@ -871,6 +873,9 @@ def _get_data_config(
             "delay": latency,
             "allow_unequal_lengths": True,
         },
+        "joint": [
+            {"name": "nam.data.normalize_joint_dataset_output", "kwargs": {"level_rms_dbfs": -18.0}}
+        ],
     }
     return data_config
 
@@ -939,6 +944,11 @@ def _get_dataloaders(
     data_config["common"]["nx"] = model.net.receptive_field
     dataset_train = _init_dataset(data_config, _Split.TRAIN)
     dataset_validation = _init_dataset(data_config, _Split.VALIDATION)
+    _apply_joint_dataset_hooks(
+        dataset_train=dataset_train,
+        dataset_validation=dataset_validation,
+        hooks=_get_joint_dataset_hooks(data_config.get("joint", [])),
+    )
     train_dataloader = _DataLoader(dataset_train, **learning_config["train_dataloader"])
     val_dataloader = _DataLoader(
         dataset_validation, **learning_config["val_dataloader"]

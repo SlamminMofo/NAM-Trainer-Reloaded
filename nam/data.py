@@ -16,6 +16,7 @@ from enum import Enum as _Enum
 from pathlib import Path as _Path
 from typing import Any as _Any
 from typing import Callable as _Callable
+from typing import List as _List
 from typing import Optional as _Optional
 from typing import Sequence as _Sequence
 from typing import Tuple as _Tuple
@@ -31,6 +32,7 @@ from tqdm import tqdm as _tqdm
 from ._core import InitializableFromConfig as _InitializableFromConfig
 from ._core import WithTeardown as _WithTeardown
 from ._handshake import HandshakeError as _HandshakeError
+from .util import init as _init
 
 logger = _logging.getLogger(__name__)
 
@@ -332,6 +334,36 @@ class Dataset(AbstractDataset, _InitializableFromConfig):
     Take a pair of matched audio files and serve input + output pairs.
     """
 
+    class _ScaleOutputHook:
+        """
+        A hook for model export to rescale the output to undo data scaling for training.
+        """
+
+        def __init__(self, scale: float):
+            self._scale = scale
+
+        def __call__(self, model_dict: dict):
+            strategy = {
+                "WaveNet": self._apply_wavenet,
+                "SlimmableContainer": self._apply_slimmable_container,
+            }
+            architecture = model_dict["architecture"]
+            if architecture not in strategy:
+                raise ValueError(f"Unsupported architecture: {architecture}")
+            strategy[architecture](model_dict)
+            return model_dict
+
+        @property
+        def scale(self) -> float:
+            return self._scale
+
+        def _apply_wavenet(self, model_dict: dict):
+            model_dict["config"]["head_scale"] *= self._scale
+
+        def _apply_slimmable_container(self, model_dict: dict):
+            for submodel_config in model_dict["config"]["submodels"]:
+                self(submodel_config["model"])
+
     def __init__(
         self,
         x: _torch.Tensor,
@@ -425,6 +457,10 @@ class Dataset(AbstractDataset, _InitializableFromConfig):
         self._y = y
         self._nx = nx
         self._ny = ny if ny is not None else len(x) - nx + 1
+
+        # Scale applied to the output; see .scale_output()
+        # Bit confusing given that y_scale is there, admittedly.
+        self._y_scale = None
 
     def __getitem__(self, idx: int) -> _Tuple[_torch.Tensor, _torch.Tensor]:
         """
@@ -539,6 +575,34 @@ class Dataset(AbstractDataset, _InitializableFromConfig):
                     msg += f"\n\nOriginal exception:\n{e}"
                 raise DataError(msg)
         return {"x": x, "y": y, "sample_rate": sample_rate, **config}
+
+    def handshake(self, model: "nam.models.base.BaseNet"):  # noqa: F821
+        super().handshake(model)
+        if self._y_scale is not None:
+            # The data have been altered from what they were provided as. The model is
+            # being taught to predict something that's different from what the data
+            # actually are.
+            # Factor this out on the model export to the .nam file.
+            hook = self._ScaleOutputHook(scale=1.0 / self._y_scale)
+            add_hook = True
+            for other in model.export_model_dict_post_hooks:
+                if isinstance(other, self._ScaleOutputHook):
+                    if other.scale != hook.scale:
+                        raise ValueError(
+                            "Model already has a scale output hook with a different scale"
+                        )
+                    add_hook = False
+            if add_hook:
+                model.export_model_dict_post_hooks.append(hook)
+
+    def scale_output(self, gain: float):
+        gain = float(gain)
+        if not _np.isfinite(gain) or gain == 0.0:
+            raise ValueError(
+                f"Output scale gain must be finite and non-zero; got {gain}"
+            )
+        self._y *= gain
+        self._y_scale = gain if self._y_scale is None else self._y_scale * gain
 
     @classmethod
     def _apply_delay(
@@ -899,4 +963,104 @@ def init_dataset(config, split: Split) -> AbstractDataset:
                 "type": name,
                 "dataset_configs": [{**common, **c} for c in base_config],
             }
+        )
+
+
+class JointDatasetHook(_abc.ABC):
+    def __call__(
+        self, dataset_train: AbstractDataset, dataset_validation: AbstractDataset
+    ):
+        return self.apply(
+            dataset_train=dataset_train, dataset_validation=dataset_validation
+        )
+
+    @_abc.abstractmethod
+    def apply(
+        self, dataset_train: AbstractDataset, dataset_validation: AbstractDataset
+    ): ...
+
+
+class JointDatasetValidationError(RuntimeError): ...
+
+
+class _AssertSameSampleRate(JointDatasetHook):
+    def apply(
+        self, dataset_train: AbstractDataset, dataset_validation: AbstractDataset
+    ):
+        train_sample_rate = getattr(dataset_train, "sample_rate", None)
+        validation_sample_rate = getattr(dataset_validation, "sample_rate", None)
+        if train_sample_rate != validation_sample_rate:
+            raise JointDatasetValidationError(
+                "Train and validation data loaders have different data set sample "
+                f"rates: {train_sample_rate}, {validation_sample_rate}"
+            )
+
+
+def get_joint_dataset_hooks(hook_configs: _List[dict]) -> _List[JointDatasetHook]:
+    hooks = [_AssertSameSampleRate()]
+    for hook_config in hook_configs:
+        hook = _init(
+            hook_config["name"],
+            *hook_config.get("args", []),
+            **hook_config.get("kwargs", {}),
+        )
+        hooks.append(hook)
+    return hooks
+
+
+def apply_joint_dataset_hooks(
+    dataset_train: AbstractDataset,
+    dataset_validation: AbstractDataset,
+    hooks: _Sequence[JointDatasetHook],
+):
+    for hook in hooks:
+        hook(dataset_train=dataset_train, dataset_validation=dataset_validation)
+
+
+class NormalizeJointDatasetOutput(JointDatasetHook):
+    def __init__(self, level_rms_dbfs: float):
+        self._level_rms_dbfs = level_rms_dbfs
+
+    def apply(
+        self, dataset_train: AbstractDataset, dataset_validation: AbstractDataset
+    ):
+        train_datasets = list(_iter_base_datasets(dataset_train, label="Train"))
+        validation_datasets = list(
+            _iter_base_datasets(dataset_validation, label="Validation")
+        )
+        train_sum_squares = sum(
+            _torch.sum(_torch.square(dataset.y)).item() for dataset in train_datasets
+        )
+        train_numel = sum(dataset.y.numel() for dataset in train_datasets)
+        if train_numel == 0:
+            raise JointDatasetValidationError(
+                "Train dataset is empty; cannot normalize"
+            )
+        if train_sum_squares == 0.0:
+            raise JointDatasetValidationError(
+                "Train dataset is all zeroes; cannot normalize"
+            )
+        train_rms = _np.sqrt(train_sum_squares / train_numel)
+        scale_factor = 10 ** (self._level_rms_dbfs / 20) / train_rms
+        if not _np.isfinite(scale_factor) or scale_factor == 0.0:
+            raise RuntimeError(
+                "Scale factor is invalid. Your data must have an `inf` or `nan` in it."
+            )
+        for dataset in train_datasets + validation_datasets:
+            dataset.scale_output(gain=scale_factor)
+
+
+def normalize_joint_dataset_output(*args, **kwargs) -> NormalizeJointDatasetOutput:
+    return NormalizeJointDatasetOutput(*args, **kwargs)
+
+
+def _iter_base_datasets(dataset: AbstractDataset, label: str):
+    if isinstance(dataset, Dataset):
+        yield dataset
+    elif isinstance(dataset, ConcatDataset):
+        for child in dataset.datasets:
+            yield from _iter_base_datasets(child, label=label)
+    else:
+        raise JointDatasetValidationError(
+            f"{label} dataset is not a NAM dataset: {type(dataset)}"
         )

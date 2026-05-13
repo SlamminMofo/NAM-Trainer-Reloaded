@@ -14,6 +14,7 @@ import pytest
 import torch
 
 from nam import data
+from nam.models.base import BaseNet
 
 _SAMPLE_RATES = (44_100.0, 48_000.0, 88_200.0, 96_000.0)
 _DEFAULT_SAMPLE_RATE = 48_000.0
@@ -101,6 +102,26 @@ class TestDataset(object):
         sample_x1 = d1[0][0]
         sample_x2 = d2[0][0]
         assert torch.allclose(sample_x1 * x_scale, sample_x2)
+
+    def test_scale_output_handshake_compensates_export_head_scale(self):
+        x, y = self._create_xy(n=8)
+        dataset = data.Dataset(x, y, 1, None, sample_rate=_DEFAULT_SAMPLE_RATE)
+        dataset.scale_output(2.0)
+        dataset.scale_output(4.0)
+        model = _DummyWaveNet()
+
+        dataset.handshake(model)
+        dataset.handshake(model)
+        model_dict = {
+            "architecture": "WaveNet",
+            "config": {"head_scale": 0.5},
+        }
+
+        assert len(model.export_model_dict_post_hooks) == 1
+        assert model._apply_export_model_dict_post_hooks(model_dict) == {
+            "architecture": "WaveNet",
+            "config": {"head_scale": pytest.approx(0.5 / 8.0)},
+        }
 
     @pytest.mark.parametrize("sample_rate", _SAMPLE_RATES)
     def test_sample_rates(self, sample_rate: int):
@@ -387,6 +408,111 @@ class TestConcatDataset(object):
         ds2 = data.Dataset(**ds2_kwargs)
         with pytest.raises(data.ConcatDatasetValidationError):
             data.ConcatDataset([ds1, ds2])
+
+
+class _DummyWaveNet(BaseNet):
+    @property
+    def pad_start_default(self) -> bool:
+        return False
+
+    @property
+    def receptive_field(self) -> int:
+        return 1
+
+    def _forward(self, x: torch.Tensor, **kwargs) -> torch.Tensor:
+        return x
+
+    def _export_config(self):
+        return {"head_scale": 0.5}
+
+    def _export_weights(self) -> np.ndarray:
+        return np.array([], dtype=np.float32)
+
+    def _get_export_architecture(self) -> str:
+        return "WaveNet"
+
+    def _get_non_user_metadata(self):
+        return {}
+
+
+def _dataset_with_constant_y(value: float, n: int = 8) -> data.Dataset:
+    return data.Dataset(
+        x=torch.zeros((n,)),
+        y=torch.full((n,), value),
+        nx=1,
+        ny=None,
+        sample_rate=_DEFAULT_SAMPLE_RATE,
+    )
+
+
+def _rms(x: torch.Tensor) -> float:
+    return torch.sqrt(torch.mean(torch.square(x))).item()
+
+
+def test_get_joint_dataset_hooks_instantiates_normalizer_alias():
+    hooks = data.get_joint_dataset_hooks(
+        [
+            {
+                "name": "nam.data.normalize_joint_dataset_output",
+                "kwargs": {"level_rms_dbfs": -18.0},
+            }
+        ]
+    )
+
+    assert len(hooks) == 2
+    assert isinstance(hooks[1], data.NormalizeJointDatasetOutput)
+
+
+def test_apply_joint_dataset_hooks_normalizes_outputs_from_training_rms():
+    target_dbfs = -12.0
+    target_rms = 10 ** (target_dbfs / 20.0)
+    dataset_train = _dataset_with_constant_y(0.25)
+    dataset_validation = _dataset_with_constant_y(0.125)
+
+    data.apply_joint_dataset_hooks(
+        dataset_train=dataset_train,
+        dataset_validation=dataset_validation,
+        hooks=data.get_joint_dataset_hooks(
+            [
+                {
+                    "name": "nam.data.normalize_joint_dataset_output",
+                    "kwargs": {"level_rms_dbfs": target_dbfs},
+                }
+            ]
+        ),
+    )
+
+    assert _rms(dataset_train.y) == pytest.approx(target_rms)
+    assert _rms(dataset_validation.y) == pytest.approx(target_rms * 0.5)
+
+
+def test_normalize_joint_dataset_output_uses_concat_training_rms():
+    target_dbfs = -6.0
+    target_rms = 10 ** (target_dbfs / 20.0)
+    train_a = _dataset_with_constant_y(0.25, n=4)
+    train_b = _dataset_with_constant_y(0.5, n=4)
+    dataset_train = data.ConcatDataset([train_a, train_b])
+    dataset_validation = _dataset_with_constant_y(0.125, n=4)
+    expected_scale = target_rms / math.sqrt((4 * 0.25**2 + 4 * 0.5**2) / 8)
+
+    data.NormalizeJointDatasetOutput(target_dbfs).apply(
+        dataset_train=dataset_train,
+        dataset_validation=dataset_validation,
+    )
+
+    assert torch.allclose(train_a.y, torch.full((4,), 0.25 * expected_scale))
+    assert torch.allclose(train_b.y, torch.full((4,), 0.5 * expected_scale))
+    assert torch.allclose(
+        dataset_validation.y, torch.full((4,), 0.125 * expected_scale)
+    )
+
+
+def test_normalize_joint_dataset_output_rejects_zero_training_output():
+    with pytest.raises(data.JointDatasetValidationError, match="all zeroes"):
+        data.NormalizeJointDatasetOutput(-18.0).apply(
+            dataset_train=_dataset_with_constant_y(0.0),
+            dataset_validation=_dataset_with_constant_y(0.125),
+        )
 
 
 def test_audio_mismatch_shapes_in_order():
