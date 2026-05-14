@@ -18,6 +18,7 @@ import torch
 import torch.nn as nn
 from pydantic import BaseModel
 
+from nam.hooks import ExportModelDictPostHook as _ExportModelDictPostHook
 from nam.models import exportable, metadata
 from nam.train import metadata as train_metadata
 
@@ -176,7 +177,7 @@ class TestExportable(object):
 
         calls = []
 
-        class RenameModel(exportable.ExportModelDictPostHook):
+        class RenameModel(_ExportModelDictPostHook):
             def apply(self, model_dict: dict) -> dict:
                 calls.append("rename_model")
                 assert model_dict["metadata"]["name"] == "Before hook"
@@ -189,7 +190,7 @@ class TestExportable(object):
                     "hook_order": calls.copy(),
                 }
 
-        class ReplaceModelDict(exportable.ExportModelDictPostHook):
+        class ReplaceModelDict(_ExportModelDictPostHook):
             def apply(self, model_dict: dict) -> dict:
                 calls.append("replace_model_dict")
                 assert model_dict["metadata"]["name"] == "Renamed"
@@ -226,11 +227,11 @@ class TestExportable(object):
         """
         model = self._get_model()
 
-        class FirstHook(exportable.ExportModelDictPostHook):
+        class FirstHook(_ExportModelDictPostHook):
             def apply(self, model_dict: dict) -> dict:
                 return {**model_dict, "hooked": "first"}
 
-        class SecondHook(exportable.ExportModelDictPostHook):
+        class SecondHook(_ExportModelDictPostHook):
             def apply(self, model_dict: dict) -> dict:
                 return {**model_dict, "hooked": "second"}
 

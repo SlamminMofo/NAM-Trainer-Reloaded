@@ -18,7 +18,7 @@ from typing import Union as _Union
 
 import numpy as _np
 
-from ..hooks import ExportModelDictPostHook
+from ..hooks import ExportModelDictPostHook as _ExportModelDictPostHook
 from ._constants import MODEL_VERSION as _MODEL_VERSION
 from .metadata import Date as _Date
 from .metadata import UserMetadata as _UserMetadata
@@ -44,7 +44,7 @@ _JsonDumpable = (
     dict[str, "_JsonDumpable"] | list["_JsonDumpable"] | str | int | float | bool | None
 )
 _ExportModelDict = _Dict[str, _JsonDumpable]
-_ExportModelDictPostHook = ExportModelDictPostHook
+
 
 
 class Exportable(_abc.ABC):
@@ -58,7 +58,7 @@ class Exportable(_abc.ABC):
         self.export_model_dict_post_hooks = []
 
     @property
-    def export_model_dict_post_hooks(self) -> _List[ExportModelDictPostHook]:
+    def export_model_dict_post_hooks(self) -> _List[_ExportModelDictPostHook]:
         """
         Hooks run after the model export dictionary has been assembled.
 
@@ -71,7 +71,7 @@ class Exportable(_abc.ABC):
 
     @export_model_dict_post_hooks.setter
     def export_model_dict_post_hooks(
-        self, hooks: _Sequence[ExportModelDictPostHook]
+        self, hooks: _Sequence[_ExportModelDictPostHook]
     ) -> None:
         self._export_model_dict_post_hooks = list(hooks)
 
