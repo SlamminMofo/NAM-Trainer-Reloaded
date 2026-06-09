@@ -1,4 +1,4 @@
-# NAM Trainer Reloaded v0.1.0
+# NAM Trainer Reloaded v1.0.0
 
 ![NAM Trainer Reloaded GUI](https://raw.githubusercontent.com/SlamminMofo/NAM-Trainer-Reloaded/main/docs/images/NAM_TRAINER_RELOADED_GUI.jpg)
 

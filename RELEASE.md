@@ -34,7 +34,7 @@ Before committing, confirm the repository does not contain:
 
 ## Suggested Release Notes
 
-NAM Trainer Reloaded v0.1.0
+NAM Trainer Reloaded v1.0.0
 
 ![NAM Trainer Reloaded GUI](docs/images/NAM_TRAINER_RELOADED_GUI.jpg)
 
