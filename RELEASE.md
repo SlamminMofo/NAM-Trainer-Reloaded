@@ -43,12 +43,12 @@ Highlights:
 - Local desktop trainer based on Neural Amp Modeler training code.
 - A2 architecture support, including current packed A2 variants.
 - Resume-from-checkpoint support, including A2 checkpoint pairs.
+- Analyze Lightning folders for reviewing previous training runs and saved metrics.
+- Core and refinement dual-stage training with separate training controls for each stage.
 - Current custom architecture list.
 - TTS input v11 short registered as a known v3-compatible input clip.
-- DeviceStatsMonitor disabled by default.
 - Windows local install/run scripts.
 - macOS install/run shell scripts and `.command` launchers.
-- No user presets, captures, output clips, checkpoints, or training logs included.
 
 Installation:
 

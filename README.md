@@ -4,17 +4,17 @@ NAM Trainer Reloaded is a compact desktop trainer package based on Neural Amp Mo
 
 ![NAM Trainer Reloaded GUI](docs/images/NAM_TRAINER_RELOADED_GUI.jpg)
 
-This repository is prepared as a source-only release package. It deliberately does not include personal captures, output clips, presets, cached files, or training runs.
+Use the included installers to create a local training environment, then launch the desktop trainer with the platform-specific runner.
 
 ## Highlights
 
 - Local desktop GUI for NAM training.
 - A2 Full+Lite, A2 Complex+Lite, A2 Complex+RevYLo, A2 Complex+Nano, Double/xDouble, and other custom architectures.
 - Queue/scheduler workflow for multiple training runs.
+- Analyze Lightning folders to review previous training runs, saved metrics, ESR values, and timing data.
+- Core and refinement dual-stage training with separate epoch, learning-rate, decay, scheduler, and refinement-focus controls.
 - Resume training from checkpoint, including A2 checkpoint-pair handling.
-- DeviceStatsMonitor disabled by default to avoid Lightning device-stat stalls during training.
 - Clean Windows and macOS local installers/runners.
-- No bundled captures, user presets, output clips, checkpoints, or training logs.
 
 ## Included
 
@@ -33,14 +33,6 @@ This repository is prepared as a source-only release package. It deliberately do
   - `requirements-windows.txt`
   - `requirements.txt`
 - `pyproject.toml`, `MANIFEST.in`, `LICENSE`, and GitHub publishing notes.
-
-## Excluded
-
-- User `settings.json` files and saved local paths.
-- Saved advanced-option preset data.
-- Training outputs, output clips, NAM exports, checkpoints, Lightning logs, caches, and temporary files.
-- Input audio clips and example capture audio.
-- Tests, test resources, docs media, screenshots, and development-only files.
 
 ## Quick Start: Windows
 
