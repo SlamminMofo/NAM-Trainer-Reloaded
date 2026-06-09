@@ -1,0 +1,27 @@
+include LICENSE
+include README.md
+include INSTALL.md
+include GITHUB_READY.md
+include RELEASE.md
+include requirements-windows.txt
+include requirements.txt
+include run_trainer.bat
+include run_trainer.sh
+include INSTALL_WINDOWS.bat
+include INSTALL_MACOS.sh
+include INSTALL_MACOS.command
+include run_trainer.command
+include .gitignore
+include .gitattributes
+include RELEASE_NOTES.md
+include docs/images/NAM_TRAINER_RELOADED_GUI.jpg
+recursive-include scripts *.ps1 *.sh
+recursive-include nam/train/_resources *.json
+include nam/models/_resources/loudness_input.wav
+include nam/_dependencies/auraloss/LICENSE
+global-exclude __pycache__/*
+global-exclude *.py[cod]
+global-exclude nam/train/gui/_resources/settings.json
+global-exclude nam/train/gui/_resources/settings.json.*
+global-exclude *.ckpt *.nam *.npy *.pt *.pth *.onnx
+global-exclude *.flac *.aif *.aiff *.mp3

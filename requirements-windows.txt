@@ -1,0 +1,14 @@
+librosa
+matplotlib
+numpy
+pydantic>=2.0.0
+pytorch-lightning
+requests
+rich
+scipy
+sounddevice
+soundfile
+tensorboard
+transformers>=4
+tqdm
+wavio>=0.0.5
