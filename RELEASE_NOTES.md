@@ -10,11 +10,8 @@ NAM Trainer Reloaded is a compact desktop trainer package based on Neural Amp Mo
 - A2 architecture support, including current packed A2 variants.
 - Resume-from-checkpoint support, including A2 checkpoint pairs.
 - Custom architecture list including RevYLo, Nano variants, Double/xDouble/yDouble, and A2 hybrids.
-- TTS input v11 short registered as a known v3-compatible input clip.
-- DeviceStatsMonitor disabled by default to avoid Lightning device-stat logging stalls during training.
 - Windows local install/run scripts.
 - macOS install/run shell scripts and `.command` launchers.
-- Clean release: no user presets, captures, output clips, checkpoints, NAM exports, or training logs included.
 
 ## Installation Summary
 
